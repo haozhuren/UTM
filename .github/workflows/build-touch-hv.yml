@@ -53,7 +53,7 @@ jobs:
           brew update
           brew uninstall --ignore-dependencies cmake || true
           brew install bison pkg-config gettext glib-utils libgpg-error nasm make meson cmake
-          brew install llvm spirv-llvm-translator libclc libxcb libxrandr
+          brew install llvm spirv-llvm-translator spirv-tools glslang libclc libxcb libxrandr
           python3 -m venv "$RUNNER_TEMP/utm-python"
           "$RUNNER_TEMP/utm-python/bin/python" -m pip install six pyparsing setuptools pyyaml distlib mako
           echo "$RUNNER_TEMP/utm-python/bin" >> "$GITHUB_PATH"
