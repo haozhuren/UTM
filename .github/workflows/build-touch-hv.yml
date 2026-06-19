@@ -1,0 +1,132 @@
+name: Build UTM HV Touch IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - utm-pr-7697-touch-actions
+
+permissions:
+  contents: read
+
+env:
+  BUILD_XCODE_PATH: /Applications/Xcode_26.0.app
+  PLATFORM: ios
+  ARCH: arm64
+  SDK: iphoneos
+  SCHEME: iOS
+
+jobs:
+  build-sysroot:
+    name: Build iOS sysroot
+    runs-on: macos-15
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          if [ -d "$BUILD_XCODE_PATH" ]; then
+            sudo xcode-select -s "$BUILD_XCODE_PATH"
+          else
+            XCODE_APP="$(ls -d /Applications/Xcode*.app | sort -r | head -n 1)"
+            sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Restore sysroot cache
+        id: cache-sysroot
+        uses: actions/cache@v4
+        with:
+          path: ./sysroot-ios-arm64
+          key: sysroot-ios-arm64-${{ hashFiles('scripts/build_dependencies.sh') }}-${{ hashFiles('patches/**') }}
+
+      - name: Install build requirements
+        if: steps.cache-sysroot.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          brew update
+          brew uninstall --ignore-dependencies cmake || true
+          brew install bison pkg-config gettext glib-utils libgpg-error nasm make meson cmake
+          brew install llvm spirv-llvm-translator libxcb libxrandr
+
+      - name: Build sysroot
+        if: steps.cache-sysroot.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          export PATH="/usr/local/opt/bison/bin:/opt/homebrew/opt/bison/bin:$PATH"
+          ./scripts/build_dependencies.sh -p "$PLATFORM" -a "$ARCH"
+
+      - name: Pack sysroot
+        run: tar -acf sysroot-ios-arm64.tgz sysroot-ios-arm64
+
+      - name: Upload sysroot
+        uses: actions/upload-artifact@v4
+        with:
+          name: sysroot-ios-arm64
+          path: sysroot-ios-arm64.tgz
+          retention-days: 3
+
+  build-ipa:
+    name: Build HV IPA
+    needs: build-sysroot
+    runs-on: macos-15
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          if [ -d "$BUILD_XCODE_PATH" ]; then
+            sudo xcode-select -s "$BUILD_XCODE_PATH"
+          else
+            XCODE_APP="$(ls -d /Applications/Xcode*.app | sort -r | head -n 1)"
+            sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Download sysroot
+        uses: actions/download-artifact@v4
+        with:
+          name: sysroot-ios-arm64
+
+      - name: Unpack sysroot
+        run: tar -xf sysroot-ios-arm64.tgz
+
+      - name: Install packaging tools
+        run: brew install ldid
+
+      - name: Build UTM
+        run: ./scripts/build_utm.sh -k "$SDK" -s "$SCHEME" -a "$ARCH" -o UTM
+
+      - name: Package HV IPA
+        shell: bash
+        run: |
+          mkdir -p package-hv
+          ./scripts/package.sh ipa-hv UTM.xcarchive package-hv
+          mv package-hv/UTM.ipa UTM-HV-touch.ipa
+
+      - name: Verify IPA
+        shell: bash
+        run: |
+          unzip -q UTM-HV-touch.ipa -d verify
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" verify/Payload/UTM.app/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" verify/Payload/UTM.app/Info.plist
+          ldid -e verify/Payload/UTM.app/UTM | grep -E "com.apple.private.hypervisor|platform-application|com.apple.vm.device-access"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: UTM-HV-touch
+          path: UTM-HV-touch.ipa
+          retention-days: 14
