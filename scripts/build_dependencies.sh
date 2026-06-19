@@ -177,10 +177,14 @@ patch_mesa_clc_llvm22 () {
 #endif
 ' "$CLC_HELPERS"
     fi
+    if ! grep -q '#define UNUSED __attribute__((unused))' "$CLC_HELPERS"; then
+        LC_ALL=C perl -0pi -e 's/(#if LLVM_VERSION_MAJOR >= 20\n#include <llvm\/Support\/VirtualFileSystem.h>\n#endif\n\n)#include "util\/macros.h"/$1#ifndef UNUSED\n#define UNUSED __attribute__((unused))\n#endif\n\n#include "util\/macros.h"/' "$CLC_HELPERS"
+    fi
     if ! grep -q 'clang::GetResourcesPath(std::string(clang_path))' "$CLC_HELPERS"; then
         LC_ALL=C perl -0pi -e 's/#if LLVM_VERSION_MAJOR >= 20\n      Driver::GetResourcesPath\(std::string\(clang_path\)\);\n#else/#if LLVM_VERSION_MAJOR >= 22\n      clang::GetResourcesPath(std::string(clang_path));\n#elif LLVM_VERSION_MAJOR >= 20\n      Driver::GetResourcesPath(std::string(clang_path));\n#else/' "$CLC_HELPERS"
     fi
     grep -q '#undef UNUSED' "$CLC_HELPERS" || { echo "${RED}Failed to patch Mesa UNUSED macro conflict.${NC}"; exit 1; }
+    grep -q '#define UNUSED __attribute__((unused))' "$CLC_HELPERS" || { echo "${RED}Failed to restore Mesa UNUSED macro.${NC}"; exit 1; }
     grep -q 'clang::GetResourcesPath(std::string(clang_path))' "$CLC_HELPERS" || { echo "${RED}Failed to patch Mesa LLVM 22 resource path API.${NC}"; exit 1; }
 }
 
