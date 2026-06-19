@@ -157,6 +157,33 @@ patch_qemu_configure () {
 ' "$CONFIGURE"
 }
 
+patch_mesa_clc_llvm22 () {
+    CLC_HELPERS="$BUILD_DIR/mesa.git/src/compiler/clc/clc_helpers.cpp"
+    if [ ! -f "$CLC_HELPERS" ]; then
+        echo "${RED}Cannot find Mesa CLC helper source: $CLC_HELPERS${NC}"
+        exit 1
+    fi
+    if ! grep -q '#undef UNUSED' "$CLC_HELPERS"; then
+        LC_ALL=C sed -i '' '/#include "util\/set.h"/a\
+#ifdef UNUSED\
+#undef UNUSED\
+#endif
+' "$CLC_HELPERS"
+    fi
+    if ! grep -q '#include <clang/Options/OptionUtils.h>' "$CLC_HELPERS"; then
+        LC_ALL=C sed -i '' '/#include <clang\/Basic\/TargetInfo.h>/a\
+#if LLVM_VERSION_MAJOR >= 22\
+#include <clang/Options/OptionUtils.h>\
+#endif
+' "$CLC_HELPERS"
+    fi
+    if ! grep -q 'clang::GetResourcesPath(std::string(clang_path))' "$CLC_HELPERS"; then
+        LC_ALL=C perl -0pi -e 's/#if LLVM_VERSION_MAJOR >= 20\n      Driver::GetResourcesPath\(std::string\(clang_path\)\);\n#else/#if LLVM_VERSION_MAJOR >= 22\n      clang::GetResourcesPath(std::string(clang_path));\n#elif LLVM_VERSION_MAJOR >= 20\n      Driver::GetResourcesPath(std::string(clang_path));\n#else/' "$CLC_HELPERS"
+    fi
+    grep -q '#undef UNUSED' "$CLC_HELPERS" || { echo "${RED}Failed to patch Mesa UNUSED macro conflict.${NC}"; exit 1; }
+    grep -q 'clang::GetResourcesPath(std::string(clang_path))' "$CLC_HELPERS" || { echo "${RED}Failed to patch Mesa LLVM 22 resource path API.${NC}"; exit 1; }
+}
+
 download_all () {
     [ -d "$BUILD_DIR" ] || mkdir -p "$BUILD_DIR"
     download $PKG_CONFIG_SRC
@@ -1107,6 +1134,7 @@ if [ -z "$REBUILD" ]; then
     download_all
 fi
 patch_qemu_configure
+patch_mesa_clc_llvm22
 echo "${GREEN}Deleting old sysroot!${NC}"
 rm -rf "$PREFIX/"*
 rm -f "$BUILD_DIR/BUILD_SUCCESS"
