@@ -54,6 +54,7 @@ jobs:
           brew uninstall --ignore-dependencies cmake || true
           brew install bison pkg-config gettext glib-utils libgpg-error nasm make meson cmake
           brew install llvm spirv-llvm-translator libxcb libxrandr
+          python3 -m pip install --user six pyparsing
 
       - name: Build sysroot
         if: steps.cache-sysroot.outputs.cache-hit != 'true'
