@@ -141,6 +141,22 @@ clone () {
     git -C "$DIR" checkout "$COMMIT"
 }
 
+patch_qemu_configure () {
+    CONFIGURE="$QEMU_DIR/configure"
+    if [ ! -f "$CONFIGURE" ]; then
+        echo "${RED}Cannot find QEMU configure script: $CONFIGURE${NC}"
+        exit 1
+    fi
+    if grep -q 'needs_exe_wrapper = true' "$CONFIGURE"; then
+        return
+    fi
+    LC_ALL=C sed -i '' '/echo "\[properties\]" >> $cross/a\
+  if test "$cross_compile" = "yes"; then\
+    echo "needs_exe_wrapper = true" >> $cross\
+  fi
+' "$CONFIGURE"
+}
+
 download_all () {
     [ -d "$BUILD_DIR" ] || mkdir -p "$BUILD_DIR"
     download $PKG_CONFIG_SRC
@@ -1090,6 +1106,7 @@ fi
 if [ -z "$REBUILD" ]; then
     download_all
 fi
+patch_qemu_configure
 echo "${GREEN}Deleting old sysroot!${NC}"
 rm -rf "$PREFIX/"*
 rm -f "$BUILD_DIR/BUILD_SUCCESS"
